@@ -1,0 +1,64 @@
+package com.finance.modules.ai.config;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.client.RestTemplateBuilder;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.client.RestTemplate;
+
+import java.time.Duration;
+
+@Configuration
+public class AiConfig {
+
+    @Value("${ai.api-key}")
+    private String apiKey;
+
+    @Value("${ai.model}")
+    private String model;
+
+    @Value("${ai.base-url}")
+    private String baseUrl;
+
+    @Value("${ai.timeout:30000}")
+    private int timeout;
+
+    @Value("${ai.max-tokens:1000}")
+    private int maxTokens;
+
+    /**
+     * 这里创建一个专门用于调用 AI 接口的 RestTemplate
+     * RestTemplate是Spring 提供的 发送 HTTP 请求的工具，这里专门用来 调用 AI 接口。
+     * @param builder
+     * @return
+     */
+    @Bean
+    public RestTemplate aiRestTemplate(RestTemplateBuilder builder) {
+        return builder
+                .connectTimeout(Duration.ofMillis(timeout))// 连接超时：建立连接的最大时间
+                .readTimeout(Duration.ofMillis(timeout))// 读取超时：等待 AI 返回结果的最大时间
+                .build();// 构建出 RestTemplate 对象
+    }
+
+    // ===== Getter 方法供 Service 使用 =====
+
+    public String getApiKey() {
+        return apiKey;
+    }
+
+    public String getModel() {
+        return model;
+    }
+
+    public String getBaseUrl() {
+        return baseUrl;
+    }
+
+    public int getTimeout() {
+        return timeout;
+    }
+
+    public int getMaxTokens() {
+        return maxTokens;
+    }
+}

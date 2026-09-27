@@ -1,0 +1,72 @@
+/* 财务管理 - 自定义主题变量 */
+
+/* ========== 主色调（蓝色系） ========== */
+$primary-color: #3B6FE8;
+$primary-light: #4F8CFF;
+$primary-dark: #2563EB;
+$primary-bg: #EEF2FF;
+$primary-gradient: linear-gradient(135deg, #4F8CFF, #3B6FE8);
+
+/* ========== 功能色 ========== */
+$income-color: #10B981;       /* 收入绿色 */
+$expense-color: #EF4444;      /* 支出红色 */
+$warning-color: #F59E0B;      /* 警告黄色 */
+$success-color: #10B981;
+$error-color: #EF4444;
+
+/* ========== 背景色 ========== */
+$bg-white: #FFFFFF;
+$bg-page: #F5F7FA;
+$bg-card: #FFFFFF;
+$bg-hover: #F8F9FC;
+$bg-stripe: #FAFBFC;
+
+/* ========== 文字颜色 ========== */
+$text-primary: #1A1A2E;
+$text-body: #333333;
+$text-secondary: #666666;
+$text-muted: #999999;
+$text-placeholder: #C0C0C0;
+$text-white: #FFFFFF;
+$text-income: #10B981;
+$text-expense: #EF4444;
+
+/* ========== 边框颜色 ========== */
+$border-color: #E8ECF1;
+$border-light: #F0F2F5;
+
+/* ========== 圆角 ========== */
+$radius-sm: 8rpx;
+$radius-md: 12rpx;
+$radius-lg: 16rpx;
+$radius-xl: 20rpx;
+$radius-round: 100rpx;
+
+/* ========== 间距 ========== */
+$spacing-xs: 8rpx;
+$spacing-sm: 12rpx;
+$spacing-md: 16rpx;
+$spacing-lg: 24rpx;
+$spacing-xl: 32rpx;
+
+/* ========== 字体大小 ========== */
+$font-xs: 22rpx;
+$font-sm: 24rpx;
+$font-md: 28rpx;
+$font-lg: 32rpx;
+$font-xl: 36rpx;
+$font-xxl: 44rpx;
+$font-title: 48rpx;
+
+/* ========== 阴影 ========== */
+$shadow-sm: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+$shadow-md: 0 4rpx 16rpx rgba(0, 0, 0, 0.06);
+$shadow-lg: 0 8rpx 24rpx rgba(0, 0, 0, 0.08);
+
+/* ========== uni-app 内置变量覆盖 ========== */
+$uni-color-primary: $primary-color;
+$uni-color-success: $success-color;
+$uni-color-warning: $warning-color;
+$uni-color-error: $error-color;
+$uni-bg-color: $bg-white;
+$uni-bg-color-grey: $bg-page;

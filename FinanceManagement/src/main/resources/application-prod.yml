@@ -1,0 +1,97 @@
+# 生产环境配置 - 企业标准
+server:
+  port: 8080
+  servlet:
+    session:
+      tracking-modes: cookie  # 生产环境安全配置
+
+spring:
+  # 数据源配置
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/finance_management?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: ${DB_PASSWORD}
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 300000
+      max-lifetime: 900000
+      connection-timeout: 10000
+      connection-test-query: SELECT 1
+
+  # Redis 配置
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+          max-wait: -1ms
+
+  # Jackson
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+
+  # 文件上传
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 100MB
+      resolve-lazily: true
+
+# MyBatis-Plus 生产环境配置
+mybatis-plus:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.finance.modules.*.entity
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+    banner: false
+
+# JWT
+jwt:
+  secret: ${JWT_SECRET}
+  expiration: 604800000
+
+# AI 配置
+ai:
+  enabled: true
+  provider: deepseek
+  model: deepseek-ai/DeepSeek-R1-0528-Qwen3-8B
+  api-key: ${AI_API_KEY}
+  base-url: https://api.siliconflow.cn/v1
+  timeout: 60000
+  max-tokens: 1000
+
+# 日志（企业标准）
+logging:
+  level:
+    com.finance: info
+    org.springframework.security: warn
+    org.springframework.web: warn
+    org.springframework.web.servlet.resource: warn
+    root: warn
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# 关闭旧版 MyBatis
+mybatis:
+  mapper-scan:
+    enabled: false
+
+# 生产环境优化
+spring.main.banner-mode: "off"
+spring.lifecycle.timeout-per-shutdown-phase: 30s
