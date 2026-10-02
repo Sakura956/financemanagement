@@ -47,6 +47,28 @@ spring:
       max-request-size: 100MB
       resolve-lazily: true
 
+  # Spring AI 配置（Agent 化改造，双供应商均走 OpenAI 兼容协议）
+  #   Chat → DeepSeek 官方（Tool Calling）；Embedding → SiliconFlow（bge-m3）
+  ai:
+    model:
+      chat: openai
+      embedding: openai
+    openai:
+      api-key: ${AI_API_KEY}
+      base-url: https://api.deepseek.com
+      chat:
+        api-key: ${AI_API_KEY}
+        base-url: https://api.deepseek.com
+        options:
+          model: deepseek-chat
+          temperature: 0.7
+          max-tokens: 2000
+      embedding:
+        api-key: ${SILICONFLOW_API_KEY}
+        base-url: https://api.siliconflow.cn
+        options:
+          model: BAAI/bge-m3
+
 # MyBatis-Plus 生产环境配置
 mybatis-plus:
   mapper-locations: classpath:mapper/*.xml
@@ -66,15 +88,27 @@ jwt:
   secret: ${JWT_SECRET}
   expiration: 604800000
 
-# AI 配置
+# AI 配置（旧版 RestTemplate 直连实现，保留给 UniApp 端使用）
 ai:
   enabled: true
   provider: deepseek
   model: deepseek-ai/DeepSeek-R1-0528-Qwen3-8B
-  api-key: ${AI_API_KEY}
+  api-key: ${SILICONFLOW_API_KEY}
   base-url: https://api.siliconflow.cn/v1
   timeout: 60000
   max-tokens: 1000
+
+# Agent 模块配置（Agent 化改造）
+agent:
+  rag:
+    enabled: true
+    index-on-startup: true
+    top-k: 5
+    similarity-threshold: 0.2
+  memory:
+    max-messages: 20
+    redis-prefix: "agent:memory:"
+    ttl-days: 7
 
 # 日志（企业标准）
 logging:

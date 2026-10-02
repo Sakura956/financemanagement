@@ -42,6 +42,30 @@ spring:
       max-file-size: 10MB
       max-request-size: 100MB
 
+  # Spring AI 配置（Agent 化改造）
+  # 双供应商架构（均走 OpenAI 兼容协议）：
+  #   Chat      → DeepSeek 官方（deepseek-chat = V3.2，支持 Tool Calling）
+  #   Embedding → SiliconFlow（BAAI/bge-m3，1024 维）
+  ai:
+    model:
+      chat: openai        # 多模型共存时选择 Chat 实现
+      embedding: openai   # 多模型共存时选择 Embedding 实现
+    openai:
+      api-key: ${AI_API_KEY}                 # 默认供应商：DeepSeek 官方
+      base-url: https://api.deepseek.com
+      chat:
+        api-key: ${AI_API_KEY}
+        base-url: https://api.deepseek.com   # DeepSeek 官方，路径 /v1/chat/completions
+        options:
+          model: deepseek-chat              # V3.2，支持 Tool Calling
+          temperature: 0.7
+          max-tokens: 2000
+      embedding:
+        api-key: ${SILICONFLOW_API_KEY}      # SiliconFlow 账户（Embedding 专用）
+        base-url: https://api.siliconflow.cn
+        options:
+          model: BAAI/bge-m3                 # 中英双语 Embedding，1024 维
+
 # MyBatis-Plus（开发环境开启SQL打印！）
 mybatis-plus:
   mapper-locations: classpath:mapper/*.xml
@@ -61,15 +85,27 @@ jwt:
   secret: ${JWT_SECRET}
   expiration: 604800000
 
-# AI
+# AI（旧版 RestTemplate 直连实现，保留给 UniApp 端使用，逐步由 Agent 模块替代）
 ai:
   enabled: true
   provider: deepseek
   model: deepseek-ai/DeepSeek-R1-0528-Qwen3-8B
-  api-key: ${AI_API_KEY}
+  api-key: ${SILICONFLOW_API_KEY}
   base-url: https://api.siliconflow.cn/v1
   timeout: 60000
   max-tokens: 1000
+
+# Agent 模块配置（Agent 化改造）
+agent:
+  rag:
+    enabled: true               # RAG 开关（关闭后 Agent 仅用工具实时查询）
+    index-on-startup: true      # 启动时自动为所有用户重建向量索引
+    top-k: 5                    # 每次检索返回的文档数
+    similarity-threshold: 0.2   # 相似度阈值（过低召回噪声多，过高易漏召回）
+  memory:
+    max-messages: 20            # 对话记忆窗口（条数）
+    redis-prefix: "agent:memory:"  # Redis Key 前缀（含冒号必须加引号）
+    ttl-days: 7                 # 对话记忆保留天数
 
 # 日志（开发环境全开，方便调试）
 logging:

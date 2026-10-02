@@ -265,6 +265,12 @@ export interface AIMessage {
   content: string
   tokensUsed: number
   createTime: string
+  /** Agent 工具调用记录（流式过程中填充，历史消息无此字段） */
+  toolCalls?: ToolCallEvent[]
+  /** RAG 检索参考来源（流式过程中填充） */
+  sources?: RagSource[]
+  /** 是否正在流式输出（控制打字机光标与"思考中"提示） */
+  streaming?: boolean
 }
 
 export interface ChatRequest {
@@ -285,6 +291,45 @@ export interface SSEToken {
   sessionId?: string
   tokensUsed?: number
   finished?: boolean
+}
+
+// ========== Agent 对话类型（Agent 化改造：工具调用可视化 + RAG 溯源 + SSE 流式） ==========
+/** 单次工具调用事件（status 随执行过程推进：start → success / error） */
+export interface ToolCallEvent {
+  sessionId?: string
+  toolName: string
+  toolLabel: string
+  status: 'start' | 'success' | 'error'
+  arguments?: string
+  result?: string
+  timestamp: number
+}
+
+/** RAG 检索参考来源（溯源卡片） */
+export interface RagSource {
+  type: 'bill' | 'plan' | 'memo' | string
+  refId?: number
+  title: string
+  detail?: string
+}
+
+/** 后端 SSE 事件：session → tool* / content*（交错）→ sources → done（异常时 error → done） */
+export interface AgentSseEvent {
+  type: 'session' | 'tool' | 'content' | 'sources' | 'done' | 'error'
+  sessionId?: string
+  text?: string
+  toolCall?: ToolCallEvent
+  sources?: RagSource[]
+  message?: string
+}
+
+/** Agent 非流式对话响应 */
+export interface AgentChatResponse {
+  sessionId: string
+  message: string
+  toolCalls?: ToolCallEvent[]
+  sources?: RagSource[]
+  createdAt: string
 }
 
 export interface FinanceDiagnosisRequest {

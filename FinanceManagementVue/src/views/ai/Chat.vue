@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { aiApi } from '@/api/modules/ai'
 import type { AISession, AIMessage } from '@/types'
 import { MagicStick, Delete, Plus, Service } from '@element-plus/icons-vue'
 import { formatDateTimeDeleteT } from '@/utils'
+import ToolCallBadge from '@/components/ai/ToolCallBadge.vue'
 
 const sessions = ref<AISession[]>([])// 会话列表
 const messages = ref<AIMessage[]>([])// 当前对话消息
@@ -57,7 +58,8 @@ async function handleDeleteSession(sessionId: string, event: Event) {
   await ElMessageBox.confirm('确定要删除该会话吗？', '确认删除', { type: 'warning' })
 
   try {
-    await aiApi.deleteSession(sessionId)
+    // Agent 接口：同时清理 MySQL 历史与 Redis 对话记忆
+    await aiApi.agentDeleteSession(sessionId)
     // 如果删除的是当前打开的会话，则清空聊天界面
     if (currentSessionId.value === sessionId) {
       currentSessionId.value = null
@@ -69,7 +71,7 @@ async function handleDeleteSession(sessionId: string, event: Event) {
   } catch { }
 }
 
-// 发送消息
+// 发送消息（Agent SSE 流式：session → tool*/content* 交错 → sources → done）
 async function sendMessage() {
   // 1. 获取输入框内容，并去掉首尾空格
   const msg = inputMessage.value.trim()
@@ -94,38 +96,75 @@ async function sendMessage() {
   // 7. 打开发送状态
   loading.value = true
 
+  // 8. 占位 AI 消息：流式过程中逐步填充正文/工具徽章/参考来源
+  const reply = reactive<AIMessage>({
+    id: Date.now() + 1,
+    role: 'assistant',
+    content: '',
+    tokensUsed: 0,
+    createTime: new Date().toISOString(),
+    toolCalls: [],
+    sources: [],
+    streaming: true,
+  })
+  messages.value.push(reply)
+
   try {
-    // 10. 请求后端流式接口
-    const res = await aiApi.chat({
-      sessionId: currentSessionId.value || undefined,
-      message: msg,
-      includeHistory: true,
-    })
-
-    // ✅ 关键修复：把返回的 sessionId 保存起来，下次对话会带上
-    if (res.sessionId) {
-      currentSessionId.value = res.sessionId
-    }
-
-    //直接添加AI回复
-    messages.value.push({
-      id: Date.now(),
-      role: 'assistant',
-      content: res.message,
-      tokensUsed: res.tokensUsed || 0,
-      createTime: new Date().toISOString(),
-    })
-
-    // 刷新会话列表
+    await aiApi.agentChatStream(
+      { sessionId: currentSessionId.value || undefined, message: msg },
+      (event) => {
+        switch (event.type) {
+          case 'session':
+            // 首个事件：记录会话ID（后续多轮对话携带）
+            if (event.sessionId) {
+              currentSessionId.value = event.sessionId
+            }
+            break
+          case 'tool':
+            // 工具调用徽章：同名工具按最新状态覆盖
+            if (event.toolCall) {
+              const exist = reply.toolCalls?.find((t) => t.toolName === event.toolCall!.toolName)
+              if (exist) {
+                Object.assign(exist, event.toolCall)
+              } else {
+                reply.toolCalls?.push(event.toolCall)
+              }
+              scrollToBottom()
+            }
+            break
+          case 'content':
+            // 正文增量（打字机效果）
+            reply.content += event.text ?? ''
+            scrollToBottom()
+            break
+          case 'sources':
+            // RAG 参考来源（溯源卡片）
+            reply.sources = event.sources ?? []
+            break
+          case 'error':
+            ElMessage.error(event.message || 'AI 服务暂时不可用')
+            break
+          case 'done':
+            reply.streaming = false
+            break
+        }
+      },
+    )
+    reply.streaming = false
+    // 刷新会话列表（新会话此时才在列表出现）
     fetchSessions()
-
   } catch (err) {
-    ElMessage.error('AI 服务暂不可用')
+    reply.streaming = false
+    // 完全没有内容时移除占位气泡，只保留错误提示
+    if (!reply.content) {
+      messages.value = messages.value.filter((m) => m.id !== reply.id)
+    }
+    const message = err instanceof Error ? err.message : ''
+    ElMessage.error(message.includes('登录') ? message : 'AI 服务暂不可用')
   } finally {
     loading.value = false
     scrollToBottom()
   }
-
 }
 //自动滚动到底部
 function scrollToBottom() {
@@ -172,8 +211,8 @@ onMounted(fetchSessions)
             <el-icon :size="48" color="#93c5fd">
               <MagicStick />
             </el-icon>
-            <h3>AI 财务助手</h3>
-            <p>您可以询问财务分析、理财建议、消费优化等问题</p>
+            <h3>FinanceAgent 智能财务助手</h3>
+            <p>我可以直接查询您的账单、统计分析、管理计划与备忘录，回复实时流式呈现</p>
           </div>
 
           <!-- 循环渲染聊天消息 -->
@@ -184,20 +223,27 @@ onMounted(fetchSessions)
               <el-avatar v-else :size="32" :icon="Service" style="background: #2563eb" />
             </div>
             <div class="message-bubble" :class="m.role">
-              <div class="message-text" v-text="m.content" />
-              <div class="message-time">{{ formatDateTimeDeleteT(m.createTime) }}</div>
-            </div>
-          </div>
-
-           <!--  AI 思考中（加载状态）-->
-          <div v-if="loading" class="message-row assistant thinking">
-            <div class="message-avatar">
-              <el-avatar :size="32" :icon="Service" style="background: #2563eb" />
-            </div>
-            <div class="message-bubble assistant">
-              <div class="message-text">
-                <span class="dot-flash">思考中</span>
+              <!-- Agent 工具调用徽章（AI 正在操作什么） -->
+              <div v-if="m.role === 'assistant' && m.toolCalls?.length" class="tool-calls">
+                <ToolCallBadge v-for="(t, i) in m.toolCalls" :key="`${t.toolName}-${i}`" :event="t" />
               </div>
+              <!-- 正文：流式输出时带光标；暂无内容且生成中显示"思考中" -->
+              <div class="message-text">
+                <template v-if="m.content">{{ m.content }}</template>
+                <span v-else-if="m.streaming" class="dot-flash">思考中</span>
+                <span v-if="m.streaming && m.content" class="cursor-blink">▍</span>
+              </div>
+              <!-- RAG 参考来源（知识库溯源） -->
+              <div v-if="m.role === 'assistant' && m.sources?.length" class="rag-sources">
+                <div class="sources-title">参考来源（知识库检索）</div>
+                <div v-for="(s, i) in m.sources" :key="i" class="source-item" :title="s.detail">
+                  <el-tag size="small" :type="s.type === 'bill' ? 'warning' : s.type === 'plan' ? 'success' : 'info'">
+                    {{ s.type === 'bill' ? '账单' : s.type === 'plan' ? '计划' : '备忘' }}
+                  </el-tag>
+                  <span class="source-title">{{ s.title }}</span>
+                </div>
+              </div>
+              <div class="message-time">{{ formatDateTimeDeleteT(m.createTime) }}</div>
             </div>
           </div>
 
@@ -370,6 +416,44 @@ onMounted(fetchSessions)
   font-size: 11px;
   margin-top: 4px;
   opacity: 0.6;
+}
+
+/* Agent 工具调用徽章行 */
+.tool-calls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+/* RAG 参考来源卡片 */
+.rag-sources {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-left: 3px solid #93c5fd;
+  background: rgba(239, 246, 255, 0.6);
+  border-radius: 6px;
+}
+
+.sources-title {
+  font-size: 11px;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.source-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #475569;
+  padding: 2px 0;
+}
+
+.source-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cursor-blink {

@@ -8,6 +8,13 @@ import org.springframework.web.client.RestTemplate;
 
 import java.time.Duration;
 
+/**
+ * 旧版 AI 配置（RestTemplate 直连实现）
+ *
+ * @deprecated 已被 Agent 模块（com.finance.modules.agent，基于 Spring AI）取代，
+ *             仅为兼容 UniApp 端旧接口保留；新功能请勿依赖此配置。
+ */
+@Deprecated
 @Configuration
 public class AiConfig {
 
