@@ -2312,3 +2312,234 @@ json
 
 ------
 
+### 9 用户端接口 - Agent 智能助手
+
+#### 9.1 模块概述
+
+Agent 模块基于 Spring AI 实现，是旧版 AI 助手（第 8 节）的升级替代，大模型可在对话中**直接调用业务工具**操作用户真实数据，并支持 **RAG 检索增强**与**多会话记忆**。
+
+**核心能力**:
+
+- **工具调用（Tool Calling）**：内置 11 个业务工具，模型按需自动选择调用
+- **RAG 检索增强**：账单/理财计划/备忘录自动切片入向量库，回答附参考来源
+- **多会话记忆**：Redis 滑动窗口记忆（供模型消费）+ MySQL 完整历史（供前端展示）双写
+- **工具调用可视化**：SSE 实时推送工具执行事件（名称/参数/结果/状态）
+
+**Agent 工具清单**（11 个）:
+
+| 工具               | 说明                                   |
+| ------------------ | -------------------------------------- |
+| queryBills         | 多条件查询账单（分类/日期/关键词/类型） |
+| createBill         | 记一笔账单（自动解析分类与日期）        |
+| deleteBill         | 删除账单（归属校验）                   |
+| getMonthlyOverview | 月度收支总览                           |
+| getCategoryDistribution | 分类占比统计                       |
+| getTrend           | 近 N 月收支趋势                        |
+| listPlans          | 理财计划列表（含收益汇总）             |
+| createPlan         | 创建理财计划                           |
+| getPlanValuation   | 理财计划估值                           |
+| listMemos          | 备忘录查询（关键词/状态筛选）          |
+| createMemo         | 创建备忘录                             |
+
+------
+
+#### 9.2 发送对话消息（非流式）
+
+**接口描述**：用户向 Agent 发送消息，一次性返回完整回复（内部复用流式编排）。
+
+- **URL**: `/user/agent/chat`
+- **Method**: `POST`
+- **是否认证**: 是
+
+**请求参数**（Body，JSON）:
+
+| 参数      | 类型   | 必填 | 说明                         |
+| --------- | ------ | ---- | ---------------------------- |
+| sessionId | String | 否   | 会话ID。不传则创建新会话     |
+| message   | String | 是   | 用户消息内容，1-2000字       |
+
+**请求示例**:
+
+json
+
+```
+{
+  "sessionId": "c324795d2aff4b1e",
+  "message": "我这个月花了多少钱？"
+}
+
+```
+
+**成功响应（200）**:
+
+json
+
+```
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "sessionId": "c324795d2aff4b1e",
+    "message": "您本月共支出 50.00 元……",
+    "toolCalls": [
+      {
+        "toolName": "getMonthlyOverview",
+        "toolLabel": "统计月度概览",
+        "status": "success",
+        "timestamp": 1790856210000
+      }
+    ],
+    "sources": [],
+    "createdAt": "2026-10-01 15:23:30"
+  }
+}
+
+```
+
+------
+
+#### 9.3 发送对话消息（流式 SSE）
+
+**接口描述**：流式对话接口，回复逐 token 下发，工具调用事件实时推送。
+
+- **URL**: `/user/agent/chat/stream`
+- **Method**: `POST`
+- **是否认证**: 是
+- **Content-Type**: `application/json`
+- **Accept**: `text/event-stream`
+
+**请求参数**：同 9.2。
+
+**SSE 事件协议**：
+
+事件序列为 `session → tool* / content*（交错）→ sources → done`，异常时为 `session → ... → error → done`。每个事件为一行 `data: {JSON}`。
+
+| 事件类型 | 说明                                                                 |
+| -------- | -------------------------------------------------------------------- |
+| session  | 首个事件，返回 `sessionId`（新会话或续接旧会话）                      |
+| tool     | 工具调用事件：`toolCall.status` ∈ start（执行中）/ success（成功）/ error（失败） |
+| content  | 正文增量 token，字段 `text`                                           |
+| sources  | RAG 参考来源列表（检索命中时下发），字段 `sources[]`                   |
+| error    | 服务异常（模型不可用等），字段 `message`                               |
+| done     | 结束事件                                                              |
+
+**响应示例**:
+
+text
+
+```
+data: {"type":"session","sessionId":"c324795d2aff4b1e"}
+
+data: {"type":"tool","toolCall":{"toolName":"queryBills","toolLabel":"查询账单","status":"start","arguments":"{\"month\":\"2026-10\"}"}}
+
+data: {"type":"tool","toolCall":{"toolName":"queryBills","toolLabel":"查询账单","status":"success","result":"{\"matchedCount\":3,...}"}}
+
+data: {"type":"content","text":"您本月"}
+
+data: {"type":"content","text":"共支出 50.00 元"}
+
+data: {"type":"sources","sources":[{"type":"bill","refId":215,"title":"2026-10-01 餐饮支出 25.00元","detail":"备注: 午餐"}]}
+
+data: {"type":"done"}
+
+```
+
+**错误响应**（模型服务不可用等）:
+
+text
+
+```
+data: {"type":"session","sessionId":"c324795d2aff4b1e"}
+
+data: {"type":"error","message":"AI 服务暂时不可用，请稍后重试"}
+
+data: {"type":"done"}
+
+```
+
+------
+
+#### 9.4 删除会话
+
+**接口描述**：删除指定会话的 MySQL 历史记录与 Redis 对话记忆（旧版 `/user/ai/sessions/{id}` 不会清理 Redis 记忆）。
+
+- **URL**: `/user/agent/session/{sessionId}`
+- **Method**: `DELETE`
+- **是否认证**: 是
+
+**成功响应（200）**:
+
+json
+
+```
+{
+  "code": 200,
+  "message": "会话已删除",
+  "data": null
+}
+
+```
+
+------
+
+#### 9.5 Agent 健康检查
+
+**接口描述**：返回 Agent 各组件（模型/工具/RAG）运行状态。
+
+- **URL**: `/user/agent/health`
+- **Method**: `GET`
+- **是否认证**: 是
+
+**成功响应（200）**:
+
+json
+
+```
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "status": "UP",
+    "chatModel": "OpenAiChatModel",
+    "embeddingModel": "OpenAiEmbeddingModel",
+    "tools": {
+      "count": 11,
+      "names": ["createBill", "createMemo", "createPlan", "deleteBill", "getCategoryDistribution", "getMonthlyOverview", "getPlanValuation", "getTrend", "listMemos", "listPlans", "queryBills"]
+    },
+    "rag": {
+      "enabled": true,
+      "totalDocuments": 17
+    }
+  }
+}
+
+```
+
+------
+
+#### 9.6 重建向量索引
+
+**接口描述**：手动重建当前用户的 RAG 向量索引（调试用；应用启动时会自动全量重建）。
+
+- **URL**: `/user/agent/index/rebuild`
+- **Method**: `POST`
+- **是否认证**: 是
+
+**成功响应（200）**:
+
+json
+
+```
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "userId": 6,
+    "documents": 17
+  }
+}
+
+```
+
+------
+

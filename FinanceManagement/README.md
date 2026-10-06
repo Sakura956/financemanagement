@@ -18,7 +18,9 @@
 | Lombok           | -       | 简化代码                  |
 | Hutool           | 5.8.34  | 通用工具类库              |
 | FastJSON2        | 2.0.53  | JSON 序列化（备选）       |
-| DeepSeek (可选)  | R1      | AI 智能助手，通过 SiliconFlow API 调用 |
+| Spring AI        | 1.1.7   | Agent 框架（ChatClient / Tool Calling / RAG / ChatMemory） |
+| DeepSeek V3.2    | -       | Agent 对话模型（官方 API，支持 Tool Calling） |
+| BAAI/bge-m3      | -       | RAG Embedding 模型（SiliconFlow，1024 维） |
 
 ## 功能模块
 
@@ -56,13 +58,20 @@
 - 提醒时间设置
 - 完成状态切换
 
-### 7. AI 智能助手 (`/api/v1/user/ai`)
-- 基于 DeepSeek 大模型的多轮对话
+### 7. AI 智能助手 (`/api/v1/user/ai`) — 旧版，保留给 UniApp 端
+- 基于 RestTemplate 直连的普通多轮对话（无工具调用）
 - 对话历史持久化存储
-- 支持流式（SSE）与非流式两种响应模式
 - 会话列表与消息历史查询
 
-### 8. 管理端 (`/api/v1/admin`) — 需 ADMIN 角色
+### 8. Agent 智能助手 (`/api/v1/user/agent`) — 推荐使用
+- 基于 Spring AI 的完整 Agent：大模型可**直接调用 11 个业务工具**（账单增删查、月度概览、分类占比、趋势分析、计划管理、备忘录管理）
+- 工具调用过程**实时可视化**：SSE 推送工具名称/参数/结果三态事件
+- **RAG 检索增强**：账单/计划/备忘自动切片入向量库，回答附带参考来源溯源
+- 多会话记忆：Redis 滑动窗口（供模型消费）+ MySQL 完整历史（供前端展示）双写
+- 流式（SSE）与非流式两种响应模式
+- 设计详见 [docs/Agent化改造实施计划.md](docs/Agent化改造实施计划.md)
+
+### 9. 管理端 (`/api/v1/admin`) — 需 ADMIN 角色
 - 用户列表查询（分页、搜索、状态筛选、日期筛选）
 - 用户详情（含账单数、备忘录数、理财计划数）
 - 封禁/解封用户（被封禁用户 Token 自动失效）
@@ -76,7 +85,9 @@ FinanceManagement
 ├── sql/
 │   └── init.sql                       # 数据库初始化脚本（建库 + 建表 + 默认数据）
 ├── docs/
-│   └── API接口详细文档.md               # 完整 API 接口文档
+│   ├── API接口详细文档.md               # 完整 API 接口文档
+│   ├── Agent化改造实施计划.md           # Agent 模块设计与实施文档
+│   └── SpringSecurity + JWT + Redis 整套框架 从登录到鉴权全流程.md
 ├── src/main/java/com/finance/
 │   ├── FinanceManagementApplication.java  # 启动类
 │   ├── common/
@@ -95,7 +106,15 @@ FinanceManagement
 │   │   ├── plan/                       # 理财计划模块
 │   │   ├── statistics/                 # 统计分析模块
 │   │   ├── memo/                       # 备忘录模块
-│   │   ├── ai/                         # AI 智能助手模块
+│   │   ├── ai/                         # AI 助手模块（旧版，保留给 UniApp）
+│   │   ├── agent/                      # Agent 模块（Spring AI 编排）
+│   │   │   ├── config/                 #   ChatClient/向量库/记忆/工具回调 Bean
+│   │   │   ├── controller/             #   对话与健康检查控制器（SSE）
+│   │   │   ├── dto/                    #   请求/响应/SSE事件/工具事件/来源
+│   │   │   ├── memory/                 #   Redis 版对话记忆仓库
+│   │   │   ├── rag/                    #   切片/向量检索/启动重建
+│   │   │   ├── service/                #   Agent 编排服务
+│   │   │   └── tools/                   #   11 个 @Tool 业务工具 + 可观测装饰器
 │   │   └── admin/                      # 管理端模块
 │   └── util/
 │       ├── RedisUtil.java              # Redis 工具类
@@ -136,12 +155,16 @@ sql文件里插入的密文仅为格式占位。
 
 ### 2. 修改配置文件
 
-打开 `src/main/resources/application.yml`，修改以下配置项：
+项目根目录的 `.env` 文件存放敏感信息（**已被 .gitignore 忽略，不会入库**），启动前先配置：
 
-- **数据库连接**：`spring.datasource.username`、`spring.datasource.password`、`spring.datasource.url`
-- **Redis 密码**：`spring.data.redis.password`（如无密码则留空）
-- **JWT 密钥**：`jwt.secret`（请改为自己的随机字符串，至少 256 位）
-- **AI API Key**（可选）：`ai.api-key`，如不需要 AI 功能可将 `ai.enabled` 设为 `false`
+| 环境变量              | 说明                                                                 |
+| --------------------- | -------------------------------------------------------------------- |
+| `DB_PASSWORD`         | MySQL 密码                                                            |
+| `JWT_SECRET`          | JWT 签名密钥（≥256 位随机字符串）                                       |
+| `AI_API_KEY`          | **DeepSeek 官方 API Key**（Agent 对话模型，[platform.deepseek.com](https://platform.deepseek.com) 申请） |
+| `SILICONFLOW_API_KEY` | **SiliconFlow API Key**（RAG Embedding，[siliconflow.cn](https://siliconflow.cn) 申请；需实名认证后 bge-m3 免费） |
+
+其余配置在 `src/main/resources/application-dev.yml`（开发）/ `application-prod.yml`（生产）中按需调整。
 
 > 具体配置文件见 `src/main/resources/application.yml`或者配置文件具体说明
 
@@ -196,17 +219,44 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 | `secret`     | JWT 签名密钥，**生产环境务必修改**为随机字符串（≥256位） |
 | `expiration` | Token 有效期（毫秒），默认 604800000（7天）             |
 
-### AI 配置 `ai`
+### AI 配置 `ai`（旧版，UniApp 兼容）
 
 | 参数         | 说明                                                     |
 | ------------ | -------------------------------------------------------- |
 | `enabled`    | 是否启用 AI 功能（`true` / `false`）                      |
 | `provider`   | AI 提供商，当前为 `deepseek`                              |
 | `model`      | 模型名称                                                  |
-| `api-key`    | API 密钥，需到 [SiliconFlow](https://siliconflow.cn) 注册获取 |
+| `api-key`    | API 密钥（环境变量 `SILICONFLOW_API_KEY`）                |
 | `base-url`   | API 接口地址                                              |
 | `timeout`    | 请求超时时间（毫秒）                                       |
 | `max-tokens` | 每次回复最大 Token 数                                      |
+
+### Spring AI 配置 `spring.ai`（Agent 模块，双供应商）
+
+Chat 与 Embedding 分别指向不同供应商（均走 OpenAI 兼容协议）：
+
+| 参数                                   | 说明                                                        |
+| -------------------------------------- | ----------------------------------------------------------- |
+| `spring.ai.openai.chat.base-url`       | 对话模型地址，默认 `https://api.deepseek.com`（DeepSeek 官方） |
+| `spring.ai.openai.chat.api-key`        | 对话密钥（环境变量 `AI_API_KEY`）                            |
+| `spring.ai.openai.chat.options.model`  | 对话模型，默认 `deepseek-chat`（V3.2，支持 Tool Calling）     |
+| `spring.ai.openai.embedding.base-url`  | Embedding 地址，默认 `https://api.siliconflow.cn`            |
+| `spring.ai.openai.embedding.api-key`   | Embedding 密钥（环境变量 `SILICONFLOW_API_KEY`）             |
+| `spring.ai.openai.embedding.options.model` | Embedding 模型，默认 `BAAI/bge-m3`（1024 维）            |
+
+### Agent 模块配置 `agent`
+
+| 参数                             | 说明                                                         |
+| -------------------------------- | ------------------------------------------------------------ |
+| `agent.rag.enabled`              | 是否启用 RAG 检索增强（关闭后对话不受影响）                    |
+| `agent.rag.index-on-startup`     | 启动时是否后台全量重建向量索引（内存向量库重启丢失，建议开启）  |
+| `agent.rag.top-k`                | 检索返回的最相似文档数，默认 5                                 |
+| `agent.rag.similarity-threshold` | 相似度阈值（余弦距离过滤），默认 0.2                           |
+| `agent.memory.max-messages`      | 对话记忆滑动窗口大小，默认 20                                 |
+| `agent.memory.redis-prefix`      | Redis 记忆 Key 前缀，默认 `agent:memory:`                      |
+| `agent.memory.ttl-days`          | 记忆过期天数，默认 7                                          |
+
+> 注：SimpleVectorStore 为内存实现，Embedding 服务不可用时 RAG 自动降级，不影响对话与工具调用。
 
 ### MyBatis-Plus 配置 `mybatis-plus`
 
@@ -243,7 +293,8 @@ Authorization: Bearer <token>
 | 理财计划     | `/user/finance-plans/*`     | 投资计划管理  |
 | 统计分析     | `/user/statistics/*`        | 图表数据     |
 | 备忘录       | `/user/memos/*`             | 备忘管理     |
-| AI 助手      | `/user/ai/*`                | 智能对话     |
+| AI 助手      | `/user/ai/*`                | 智能对话（旧版，UniApp 兼容） |
+| Agent 助手   | `/user/agent/*`             | 工具调用 + RAG + SSE 流式对话（推荐） |
 | 管理端       | `/admin/*`                  | 管理员功能    |
 
 ## 前端项目

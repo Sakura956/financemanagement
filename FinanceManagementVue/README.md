@@ -11,7 +11,7 @@
 - **理财计划** — 管理投资组合，跟踪本金、当前价值、收益及收益率，支持估值更新与赎回
 - **统计分析** — 月度收支总览、分类占比饼图、近 N 个月趋势图、年度汇总报告
 - **备忘录** — 待办事项管理，支持提醒时间、完成状态切换
-- **AI 助手** — 多会话对话，提供智能财务分析、消费优化建议、理财咨询
+- **AI 助手（Agent）** — 大模型可直接操作你的账单/统计/计划/备忘录（如"帮我记一笔午餐 25 元"）；回复流式打字机呈现，工具调用过程以徽章实时展示，支持 RAG 参考来源溯源
 - **个人设置** — 修改昵称/头像/密码
 
 ### 管理端（ADMIN 角色）
@@ -51,16 +51,18 @@ FinanceManagementVue/
 │   │       ├── financePlan.ts       #   理财计划 CRUD + 估值/状态
 │   │       ├── statistics.ts        #   统计（总览/饼图/趋势/年度）
 │   │       ├── memo.ts              #   备忘录 CRUD + 切换完成状态
-│   │       ├── ai.ts                #   AI 会话/消息
+│   │       ├── ai.ts                #   AI 会话/消息 + Agent SSE 流式对话
 │   │       └── admin.ts             #   管理后台（用户/分类/仪表盘）
 │   ├── assets/
 │   │   └── styles/
 │   │       └── global.scss          # 全局样式 + Element Plus 主题覆盖
 │   ├── components/
-│   │   └── layout/                  # 布局组件
-│   │       ├── AppLayout.vue        #   主布局（sidebar + header + content）
-│   │       ├── Sidebar.vue          #   侧边栏导航
-│   │       └── AppHeader.vue        #   顶部栏（用户信息/退出）
+│   │   ├── layout/                  # 布局组件
+│   │   │   ├── AppLayout.vue        #   主布局（sidebar + header + content）
+│   │   │   ├── Sidebar.vue          #   侧边栏导航
+│   │   │   └── AppHeader.vue        #   顶部栏（用户信息/退出）
+│   │   └── ai/
+│   │       └── ToolCallBadge.vue    # Agent 工具调用徽章（执行中/成功/失败三态）
 │   ├── router/
 │   │   └── index.ts                 # 路由配置 + 导航守卫（登录/角色校验）
 │   ├── stores/
@@ -149,7 +151,8 @@ npm run dev
 | 理财 | `/user/finance-plans/**` | 计划 CRUD、估值、赎回 |
 | 统计 | `/user/statistics/**` | 总览、饼图、趋势、年度汇总 |
 | 备忘录 | `/user/memos/**` | 备忘 CRUD、切换完成 |
-| AI | `/user/ai/**` | 聊天、会话管理 |
+| AI | `/user/ai/**` | 会话列表、历史消息（旧版） |
+| Agent | `/user/agent/**` | 工具调用 + RAG + SSE 流式对话 |
 | 管理 | `/admin/**` | 用户管理、分类管理、仪表盘 |
 
 ## 可用命令
