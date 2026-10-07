@@ -78,6 +78,13 @@
 - 分类管理（CRUD、启用/禁用、默认分类保护）
 - 仪表盘统计（总用户数、今日活跃、本周/月新增、总账单数等）
 
+### 10. 报告推送 (`/api/v1/user/report`)
+- **主动式 AI 周报**：按用户自定义发送计划（每日/每周 + 周几 + 0~23 点整点）自动生成财务报告并发送邮件
+- 报告数据复用 Agent 的 11 个业务工具（`ToolContext` 显式注入 userId，定时线程无登录态）
+- AI 生成 Markdown（本周收支总结/亮点异常/趋势解读/下周建议四段式）→ CommonMark 转 HTML → Resend HTTP API 发送
+- 支持立即发送、测试邮件、报告预览（不发送不落库）、历史报告查询（落库存档）
+- 定时器每小时整点检查各用户计划，当天已发过自动跳过；单用户失败不影响他人
+
 ## 项目结构
 
 ```
@@ -114,7 +121,15 @@ FinanceManagement
 │   │   │   ├── memory/                 #   Redis 版对话记忆仓库
 │   │   │   ├── rag/                    #   切片/向量检索/启动重建
 │   │   │   ├── service/                #   Agent 编排服务
-│   │   │   └── tools/                   #   11 个 @Tool 业务工具 + 可观测装饰器
+│   │   │   └── tools/                  #   11 个 @Tool 业务工具 + 可观测装饰器
+│   │   ├── report/                     # 报告推送模块（AI 周报 + Resend 邮件）
+│   │   │   ├── config/                 #   独立 reportChatClient（不挂工具/记忆）
+│   │   │   ├── controller/             #   推送配置/立即发送/预览/历史报告
+│   │   │   ├── dto/                    #   配置与预览 DTO
+│   │   │   ├── entity/                 #   ReportPushConfig / WeeklyReport
+│   │   │   ├── mapper/                 #   MyBatis-Plus Mapper
+│   │   │   ├── scheduler/              #   每小时检查用户自定义发送计划
+│   │   │   └── service/                #   报告生成/Resend 发送服务
 │   │   └── admin/                      # 管理端模块
 │   └── util/
 │       ├── RedisUtil.java              # Redis 工具类
@@ -163,6 +178,8 @@ sql文件里插入的密文仅为格式占位。
 | `JWT_SECRET`          | JWT 签名密钥（≥256 位随机字符串）                                       |
 | `AI_API_KEY`          | **DeepSeek 官方 API Key**（Agent 对话模型，[platform.deepseek.com](https://platform.deepseek.com) 申请） |
 | `SILICONFLOW_API_KEY` | **SiliconFlow API Key**（RAG Embedding，[siliconflow.cn](https://siliconflow.cn) 申请；需实名认证后 bge-m3 免费） |
+| `RESEND_API_KEY`      | **Resend API Key**（周报邮件推送，[resend.com](https://resend.com) 免费申请，100 封/天；未配置时预览功能仍可用） |
+| `RESEND_FROM_EMAIL`  | 可选。发件人地址；未验证域名时默认 `FinanceAgent <onboarding@resend.dev>`，只能发给 Resend 账号持有者邮箱 |
 
 其余配置在 `src/main/resources/application-dev.yml`（开发）/ `application-prod.yml`（生产）中按需调整。
 
@@ -258,6 +275,16 @@ Chat 与 Embedding 分别指向不同供应商（均走 OpenAI 兼容协议）�
 
 > 注：SimpleVectorStore 为内存实现，Embedding 服务不可用时 RAG 自动降级，不影响对话与工具调用。
 
+### 报告推送配置 `report.push`（Resend 邮件周报）
+
+| 参数                       | 说明                                                                 |
+| -------------------------- | -------------------------------------------------------------------- |
+| `report.push.enabled`      | 定时推送总开关（`false` 时定时任务直接跳过），默认 `true`              |
+| `report.push.resend-api-key` | Resend API 密钥（环境变量 `RESEND_API_KEY`）                        |
+| `report.push.from-email`  | 发件人地址（环境变量 `RESEND_FROM_EMAIL`，默认 `FinanceAgent <onboarding@resend.dev>`） |
+
+> 注：发送时间由用户在个人设置页自定义（每日/每周 + 周几 + 小时），定时器每小时整点检查并按用户计划触发；当天已发过自动跳过。
+
 ### MyBatis-Plus 配置 `mybatis-plus`
 
 | 参数                                       | 说明                         |
@@ -295,6 +322,7 @@ Authorization: Bearer <token>
 | 备忘录       | `/user/memos/*`             | 备忘管理     |
 | AI 助手      | `/user/ai/*`                | 智能对话（旧版，UniApp 兼容） |
 | Agent 助手   | `/user/agent/*`             | 工具调用 + RAG + SSE 流式对话（推荐） |
+| 报告推送     | `/user/report/*`            | AI 周报邮件推送（Resend） |
 | 管理端       | `/admin/*`                  | 管理员功能    |
 
 ## 前端项目

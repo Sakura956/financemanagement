@@ -110,6 +110,14 @@ agent:
     redis-prefix: "agent:memory:"
     ttl-days: 7
 
+# 周报邮件推送（Resend HTTP API）
+# 发送时间由用户在个人设置页自定义，定时器每小时整点检查
+report:
+  push:
+    enabled: true
+    resend-api-key: ${RESEND_API_KEY:}
+    from-email: ${RESEND_FROM_EMAIL:FinanceAgent <onboarding@resend.dev>}
+
 # 日志（企业标准）
 logging:
   level:

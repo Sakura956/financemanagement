@@ -379,3 +379,50 @@ export interface UserQuery extends PageParams {
   startDate?: string
   endDate?: string
 }
+
+// ========== 周报邮件推送（Resend）类型 ==========
+/** 推送配置返回 */
+export interface PushConfig {
+  /** 接收邮箱（未配置时为空串） */
+  email: string
+  /** 报告推送开关 */
+  weeklyEnabled: boolean
+  /** 发送频率：DAILY-每日, WEEKLY-每周 */
+  frequency: 'DAILY' | 'WEEKLY' | string
+  /** 每周几发送（WEEKLY时生效）：1-周一 ... 7-周日 */
+  dayOfWeek: number
+  /** 发送时间（小时，0-23） */
+  sendHour: number
+  /** 上次发送时间 yyyy-MM-dd HH:mm（从未发送为空串） */
+  lastSendTime: string
+}
+
+/** 保存推送配置请求 */
+export interface PushConfigRequest {
+  email: string
+  weeklyEnabled: boolean
+  frequency: 'DAILY' | 'WEEKLY'
+  dayOfWeek: number
+  sendHour: number
+}
+
+/** 周报预览（Markdown 内容，不发送） */
+export interface ReportPreview {
+  title: string
+  content: string
+  periodStart: string
+  periodEnd: string
+}
+
+/** 存档周报 */
+export interface WeeklyReportItem {
+  id: number
+  title: string
+  content: string
+  periodStart: string
+  periodEnd: string
+  /** 发送状态：0-未发送, 1-成功, 2-失败 */
+  sendStatus: number
+  errorMsg?: string
+  createTime: string
+}

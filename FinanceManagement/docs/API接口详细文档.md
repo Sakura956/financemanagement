@@ -2543,3 +2543,251 @@ json
 
 ------
 
+### 10 用户端接口 - 报告推送（Resend 邮件周报）
+
+#### 10.1 模块概述
+
+报告推送模块实现**主动式 AI 服务**：系统按用户自定义的发送计划（每日/每周 + 周几 + 整点小时），自动汇总用户近 7 天账单、本月概览、分类占比、近 6 月趋势与持仓计划，交由大模型生成结构化 Markdown 财务报告，转换为 HTML 后通过 **Resend HTTP 邮件 API** 发送到用户邮箱，同时落库存档（前端可查看历史报告）。
+
+**核心能力**:
+
+- **自定义发送计划**：每日或每周（周一~周日任选）+ 0~23 点整点，完全由用户配置
+- **立即发送**：随时手动触发一次"生成 + 发送"，失败原因直接回显
+- **报告预览**：不发送、不落库，仅生成 Markdown 返回（无需配置邮件密钥）
+- **存档可溯**：每份报告落库 `weekly_report` 表，含发送状态与失败原因
+
+**实现要点**:
+
+- 数据获取**复用 Agent 的 11 个业务工具**（手工构造 `ToolContext` 注入 userId，定时线程无登录态），零重复查询逻辑
+- 报告生成使用独立的 `reportChatClient`（不挂工具、不挂记忆），避免生成过程中误调工具
+- Markdown → HTML 使用 CommonMark；邮件外层包装内联样式容器（640px、系统字体）
+- 定时器每小时整点检查所有开启推送的用户（当天已发过自动跳过，防止重复发送）
+- 单用户发送失败不影响其他用户，失败详情落库可查
+
+**数据表**: `report_push_config`（推送配置，每用户一条）、`weekly_report`（报告存档）
+
+**环境变量**: `RESEND_API_KEY`（[resend.com](https://resend.com) 免费注册获取，100 封/天）
+
+> ⚠️ Resend 免费版未验证域名时，发件人 `onboarding@resend.dev` **只能发送给 Resend 账号持有者自己的邮箱**；要发送给任意邮箱需在 [resend.com/domains](https://resend.com/domains) 验证自有域名，并通过 `RESEND_FROM_EMAIL` 环境变量指定该域名下的发件地址。
+
+------
+
+#### 10.2 获取推送配置
+
+**接口描述**：获取当前用户的报告推送配置（未配置时返回默认值）。
+
+- **URL**: `/user/report/push-config`
+- **Method**: `GET`
+- **是否认证**: 是
+
+**成功响应（200）**:
+
+json
+
+```
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "email": "user@example.com",
+    "weeklyEnabled": true,
+    "frequency": "WEEKLY",
+    "dayOfWeek": 3,
+    "sendHour": 21,
+    "lastSendTime": "2026-10-07 20:11"
+  }
+}
+
+```
+
+**参数说明**:
+
+| 参数           | 类型    | 说明                                              |
+| -------------- | ------- | ------------------------------------------------- |
+| email          | String  | 接收邮箱（未配置时为空串）                          |
+| weeklyEnabled  | Boolean | 推送开关                                           |
+| frequency      | String  | 发送频率：`DAILY`-每日 / `WEEKLY`-每周             |
+| dayOfWeek      | Integer | 每周几发送（WEEKLY 时生效）：1-周一 … 7-周日       |
+| sendHour       | Integer | 发送时间（小时，0-23，整点触发）                    |
+| lastSendTime   | String  | 上次发送时间，格式 yyyy-MM-dd HH:mm（从未发送为空串） |
+
+------
+
+#### 10.3 保存推送配置
+
+**接口描述**：保存接收邮箱、推送开关与发送计划（每日/每周 + 周几 + 小时）。
+
+- **URL**: `/user/report/push-config`
+- **Method**: `PUT`
+- **是否认证**: 是
+
+**请求参数**（Body，JSON）:
+
+| 参数          | 类型    | 必填 | 说明                                        |
+| ------------- | ------- | ---- | ------------------------------------------- |
+| email         | String  | 是   | 接收邮箱（格式校验）                          |
+| weeklyEnabled | Boolean | 否   | 推送开关，默认 true                          |
+| frequency     | String  | 否   | `DAILY` / `WEEKLY`，默认 `WEEKLY`            |
+| dayOfWeek     | Integer | 否   | 1-7（周一~周日），默认 7，仅 WEEKLY 时生效    |
+| sendHour      | Integer | 否   | 0-23，默认 20                                |
+
+**请求示例**:
+
+json
+
+```
+{
+  "email": "user@example.com",
+  "weeklyEnabled": true,
+  "frequency": "WEEKLY",
+  "dayOfWeek": 3,
+  "sendHour": 21
+}
+
+```
+
+**成功响应（200）**:
+
+json
+
+```
+{
+  "code": 200,
+  "message": "推送配置保存成功",
+  "data": null
+}
+
+```
+
+------
+
+#### 10.4 发送测试邮件
+
+**接口描述**：发送一封简单 HTML 测试邮件，验证邮箱与 Resend 配置是否生效（需先保存邮箱）。
+
+- **URL**: `/user/report/push-config/test`
+- **Method**: `POST`
+- **是否认证**: 是
+
+**成功响应（200）**:
+
+json
+
+```
+{
+  "code": 200,
+  "message": "测试邮件已发送，请查收",
+  "data": null
+}
+
+```
+
+**失败示例（未配置密钥时，500）**:
+
+json
+
+```
+{
+  "code": 500,
+  "message": "邮件推送未配置：请在 .env 中设置 RESEND_API_KEY（resend.com 免费注册获取）",
+  "data": null
+}
+
+```
+
+------
+
+#### 10.5 立即发送一次报告
+
+**接口描述**：立即生成一份完整财务报告（近 7 天数据）并发送到用户邮箱，同时落库存档。失败时返回具体原因（如 Resend 收件限制）。耗时约 10~30 秒（含 AI 生成），前端超时需放宽至 120 秒。
+
+- **URL**: `/user/report/send-now`
+- **Method**: `POST`
+- **是否认证**: 是
+
+**成功响应（200）**:
+
+json
+
+```
+{
+  "code": 200,
+  "message": "报告已生成并发送到你的邮箱",
+  "data": null
+}
+
+```
+
+------
+
+#### 10.6 预览报告（不发送）
+
+**接口描述**：生成一份报告并直接返回 Markdown 内容，**不发送邮件、不落库**。无需配置 RESEND_API_KEY 即可体验。耗时约 10~30 秒，前端超时需放宽至 120 秒。
+
+- **URL**: `/user/report/preview`
+- **Method**: `POST`
+- **是否认证**: 是
+
+**成功响应（200）**:
+
+json
+
+```
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "title": "每周财务报告（10.01-10.07）",
+    "content": "## 本周收支总结\n统计周期 **2026-10-01 至 2026-10-07**……",
+    "periodStart": "2026-10-01",
+    "periodEnd": "2026-10-07"
+  }
+}
+
+```
+
+------
+
+#### 10.7 查询历史报告
+
+**接口描述**：查询当前用户最近 10 份存档报告（含完整内容、发送状态与失败原因）。
+
+- **URL**: `/user/report/list`
+- **Method**: `GET`
+- **是否认证**: 是
+
+**成功响应（200）**:
+
+json
+
+```
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": [
+    {
+      "id": 1,
+      "userId": 1,
+      "title": "每周财务报告（10.01-10.07）",
+      "content": "## 本周收支总结\n……",
+      "periodStart": "2026-10-01",
+      "periodEnd": "2026-10-07",
+      "sendStatus": 1,
+      "errorMsg": null,
+      "createTime": "2026-10-07 20:11:03"
+    }
+  ]
+}
+
+```
+
+**参数说明**:
+
+| 参数       | 类型    | 说明                                       |
+| ---------- | ------- | ------------------------------------------ |
+| sendStatus | Integer | 发送状态：0-未发送，1-成功，2-失败          |
+| errorMsg   | String  | 发送失败原因（成功时为 null）               |
+| content    | String  | 报告 Markdown 全文                          |
+
+------
+

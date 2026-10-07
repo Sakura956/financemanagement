@@ -23,6 +23,7 @@
 - **RAG 检索增强** — 账单/理财计划/备忘录自动切片入向量库（Embedding：BAAI/bge-m3），回答附带参考来源溯源
 - **流式对话（SSE）** — 打字机效果逐 token 输出，工具调用以徽章实时展示（执行中/成功/失败）
 - **多会话记忆** — Redis 滑动窗口记忆（供模型消费）+ MySQL 完整历史（供前端展示）双写
+- **主动式周报推送** — 用户自定义发送计划（每日/每周 + 周几 + 整点），AI 自动汇总近 7 天收支生成财务报告，经 **Resend** 邮件 API 推送到邮箱，历史报告可查（个人设置页配置，支持立即发送/预览）
 - **架构解耦** — userId 通过 ToolContext 注入（解决 Reactor 线程 ThreadLocal 丢失），向量库不可用时自动降级不影响对话
 
 ## 技术栈
@@ -45,6 +46,7 @@ FinanceManagement/
 │   │   ├── modules/plan/         #   理财计划
 │   │   ├── modules/memo/         #   备忘录
 │   │   ├── modules/agent/        #   AI Agent（工具/RAG/记忆/SSE 编排）
+│   │   ├── modules/report/       #   报告推送（AI 周报 + Resend 邮件）
 │   │   ├── modules/ai/           #   旧版 AI 助手（UniApp 兼容，已 @Deprecated）
 │   │   └── modules/admin/        #   管理端
 │   ├── docs/                     #   API 接口文档、Agent 实施计划等
@@ -52,6 +54,8 @@ FinanceManagement/
 ├── FinanceManagementVue/         # Web 前端（Vue 3 + TypeScript + Element Plus）
 └── FinanceManagementUniApp/      # 移动端（uni-app）
 ```
+
+> AI 周报推送：登录后在「个人设置」页配置邮箱与发送计划（每日/每周 + 周几 + 整点），也可随时"立即发送一次"或"预览报告"。Resend 免费版未验证域名时只能发送到账号持有者邮箱。
 
 ## 快速开始
 
@@ -71,6 +75,7 @@ cd FinanceManagement
 #   JWT_SECRET=至少256位随机字符串
 #   AI_API_KEY=DeepSeek官方Key
 #   SILICONFLOW_API_KEY=SiliconFlow Key
+#   RESEND_API_KEY=Resend Key（可选，用于AI周报邮件推送）
 
 mvnw.cmd spring-boot:run        # 或 IDE 直接运行启动类
 ```

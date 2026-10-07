@@ -133,6 +133,47 @@ CREATE TABLE `ai_conversation` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI对话记录表';
 
 
+-- -----------------------------------------------------
+-- 2.7 报告推送配置表 (report_push_config)
+--     用户配置接收周报的邮箱与开关（Resend 邮件推送）
+-- -----------------------------------------------------
+DROP TABLE IF EXISTS `report_push_config`;
+CREATE TABLE `report_push_config` (
+                                      `id`              BIGINT         NOT NULL AUTO_INCREMENT  COMMENT '配置ID',
+                                      `user_id`         BIGINT         NOT NULL                 COMMENT '用户ID',
+                                      `email`           VARCHAR(100)   NOT NULL                 COMMENT '接收邮箱',
+                                      `weekly_enabled`  TINYINT        NOT NULL DEFAULT 1       COMMENT '报告推送开关：0-关闭, 1-开启',
+                                      `frequency`       VARCHAR(10)    NOT NULL DEFAULT 'WEEKLY' COMMENT '发送频率：DAILY-每日, WEEKLY-每周',
+                                      `day_of_week`     TINYINT        NOT NULL DEFAULT 7       COMMENT '每周几发送（frequency=WEEKLY时生效）：1-周一 ... 7-周日',
+                                      `send_hour`       TINYINT        NOT NULL DEFAULT 20      COMMENT '发送时间（小时，0-23）',
+                                      `last_send_time`  DATETIME       DEFAULT NULL             COMMENT '上次发送时间',
+                                      `create_time`     DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                                      `update_time`     DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                                      PRIMARY KEY (`id`),
+                                      UNIQUE KEY `uk_user_id` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='报告推送配置表';
+
+
+-- -----------------------------------------------------
+-- 2.8 每周财务报告表 (weekly_report)
+--     定时任务生成的 AI 周报存档（Markdown 内容）
+-- -----------------------------------------------------
+DROP TABLE IF EXISTS `weekly_report`;
+CREATE TABLE `weekly_report` (
+                                 `id`            BIGINT         NOT NULL AUTO_INCREMENT  COMMENT '报告ID',
+                                 `user_id`       BIGINT         NOT NULL                 COMMENT '用户ID',
+                                 `title`         VARCHAR(200)   NOT NULL                 COMMENT '报告标题',
+                                 `content`       TEXT           NOT NULL                 COMMENT '报告内容（Markdown）',
+                                 `period_start`  DATE           NOT NULL                 COMMENT '统计开始日期',
+                                 `period_end`    DATE           NOT NULL                 COMMENT '统计结束日期',
+                                 `send_status`   TINYINT        NOT NULL DEFAULT 0       COMMENT '发送状态：0-未发送, 1-成功, 2-失败',
+                                 `error_msg`     VARCHAR(500)   DEFAULT NULL             COMMENT '失败原因',
+                                 `create_time`   DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                                 PRIMARY KEY (`id`),
+                                 INDEX `idx_user_id` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='每周财务报告表';
+
+
 -- =====================================================
 -- 3. 插入初始数据
 -- =====================================================

@@ -107,6 +107,16 @@ agent:
     redis-prefix: "agent:memory:"  # Redis Key 前缀（含冒号必须加引号）
     ttl-days: 7                 # 对话记忆保留天数
 
+# 周报邮件推送（Resend HTTP API）
+# RESEND_API_KEY 在 .env 中配置（resend.com 免费注册获取，100封/天）
+# 未验证域名时 from 默认 onboarding@resend.dev，只能发给 Resend 账号持有者邮箱
+# 发送时间由用户在个人设置页自定义（每日/每周 + 周几 + 小时），定时器每小时整点检查
+report:
+  push:
+    enabled: true                                           # 总开关（false 时定时任务直接跳过）
+    resend-api-key: ${RESEND_API_KEY:}
+    from-email: ${RESEND_FROM_EMAIL:FinanceAgent <onboarding@resend.dev>}
+
 # 日志（开发环境全开，方便调试）
 logging:
   level:
